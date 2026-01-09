@@ -119,13 +119,33 @@ public class ScanOrchestrator {
     }
 
     /**
+     * Scan mode enumeration.
+     */
+    public enum ScanMode {
+        PASSIVE_ONLY,
+        ACTIVE_ONLY,
+        FULL_SCAN
+    }
+
+    /**
      * Start a scan with the specified context and enabled categories.
      *
      * @param context           The scan context
      * @param enabledCategories Categories to scan (null or empty means all)
-     * @param passiveOnly       If true, only run passive checks
+     * @param passiveOnly       If true, only run passive checks (legacy parameter)
      */
     public void startScan(ScanContext context, Set<ScanCheckCategory> enabledCategories, boolean passiveOnly) {
+        startScan(context, enabledCategories, passiveOnly ? ScanMode.PASSIVE_ONLY : ScanMode.FULL_SCAN);
+    }
+
+    /**
+     * Start a scan with the specified context, categories, and scan mode.
+     *
+     * @param context           The scan context
+     * @param enabledCategories Categories to scan (null or empty means all)
+     * @param scanMode          The scan mode (PASSIVE_ONLY, ACTIVE_ONLY, or FULL_SCAN)
+     */
+    public void startScan(ScanContext context, Set<ScanCheckCategory> enabledCategories, ScanMode scanMode) {
         if (running) {
             api.logging().logToOutput("[ScanOrchestrator] Scan already running");
             return;
@@ -138,11 +158,11 @@ public class ScanOrchestrator {
         List<IScannerCheck> checksToRun = registeredChecks.stream()
                 .filter(check -> enabledCategories == null || enabledCategories.isEmpty() 
                         || enabledCategories.contains(check.getCategory()))
-                .filter(check -> !passiveOnly || check.isPassive())
+                .filter(check -> filterByScanMode(check, scanMode))
                 .filter(check -> check.isApplicable(context))
                 .collect(Collectors.toList());
 
-        api.logging().logToOutput("[ScanOrchestrator] Starting scan with " + checksToRun.size() + " checks");
+        api.logging().logToOutput("[ScanOrchestrator] Starting scan in " + scanMode + " mode with " + checksToRun.size() + " checks");
 
         scanThread = new Thread(() -> {
             try {
@@ -218,6 +238,21 @@ public class ScanOrchestrator {
         api.logging().logToOutput("[ScanOrchestrator] " + status);
         if (statusCallback != null) {
             SwingUtilities.invokeLater(() -> statusCallback.accept(status));
+        }
+    }
+
+    /**
+     * Filters a check based on the scan mode.
+     */
+    private boolean filterByScanMode(IScannerCheck check, ScanMode scanMode) {
+        switch (scanMode) {
+            case PASSIVE_ONLY:
+                return check.isPassive();
+            case ACTIVE_ONLY:
+                return !check.isPassive();
+            case FULL_SCAN:
+            default:
+                return true;
         }
     }
 

@@ -23,6 +23,12 @@ import socketsleuth.scanner.checks.EncryptionCheck;
 import socketsleuth.scanner.checks.IDORPatternCheck;
 import socketsleuth.scanner.checks.TokenInURLCheck;
 import socketsleuth.scanner.checks.VerboseErrorCheck;
+import socketsleuth.scanner.checks.active.CommandInjectionCheck;
+import socketsleuth.scanner.checks.active.LDAPInjectionCheck;
+import socketsleuth.scanner.checks.active.NoSQLInjectionCheck;
+import socketsleuth.scanner.checks.active.SQLInjectionCheck;
+import socketsleuth.scanner.checks.active.XPathInjectionCheck;
+import socketsleuth.scanner.checks.active.XSSInjectionCheck;
 import websocket.MessageProvider;
 
 import javax.swing.*;
@@ -73,6 +79,9 @@ public class WSScanner {
         // Register passive checks
         registerPassiveChecks();
 
+        // Register active checks
+        registerActiveChecks();
+
         buildUI();
         refreshTargetList();
     }
@@ -93,6 +102,26 @@ public class WSScanner {
         orchestrator.registerCheck(new IDORPatternCheck(api));
 
         api.logging().logToOutput("[WSScanner] Registered " + orchestrator.getCheckCount() + " passive checks");
+    }
+
+    /**
+     * Registers all active scanner checks with the orchestrator.
+     * Active checks require an open WebSocket connection to run.
+     */
+    private void registerActiveChecks() {
+        int beforeCount = orchestrator.getCheckCount();
+
+        // Injection checks
+        orchestrator.registerCheck(new SQLInjectionCheck(api));
+        orchestrator.registerCheck(new NoSQLInjectionCheck(api));
+        orchestrator.registerCheck(new CommandInjectionCheck(api));
+        orchestrator.registerCheck(new XSSInjectionCheck(api));
+        orchestrator.registerCheck(new LDAPInjectionCheck(api));
+        orchestrator.registerCheck(new XPathInjectionCheck(api));
+
+        int activeCount = orchestrator.getCheckCount() - beforeCount;
+        api.logging().logToOutput("[WSScanner] Registered " + activeCount + " active checks");
+        api.logging().logToOutput("[WSScanner] Total checks: " + orchestrator.getCheckCount());
     }
 
     private void buildUI() {
@@ -312,8 +341,17 @@ public class WSScanner {
             return;
         }
 
-        boolean passiveOnly = passiveOnlyRadio.isSelected();
-        boolean activeMode = activeOnlyRadio.isSelected() || fullScanRadio.isSelected();
+        // Determine scan mode
+        ScanOrchestrator.ScanMode scanMode;
+        if (passiveOnlyRadio.isSelected()) {
+            scanMode = ScanOrchestrator.ScanMode.PASSIVE_ONLY;
+        } else if (activeOnlyRadio.isSelected()) {
+            scanMode = ScanOrchestrator.ScanMode.ACTIVE_ONLY;
+        } else {
+            scanMode = ScanOrchestrator.ScanMode.FULL_SCAN;
+        }
+
+        boolean activeMode = (scanMode != ScanOrchestrator.ScanMode.PASSIVE_ONLY);
 
         // Build scan context
         ScanContext.Builder contextBuilder = new ScanContext.Builder()
@@ -360,7 +398,7 @@ public class WSScanner {
 
         // Show results window and start scan
         resultsWindow.showWindow();
-        orchestrator.startScan(context, enabledCategories, passiveOnly);
+        orchestrator.startScan(context, enabledCategories, scanMode);
     }
 
     private void stopScan() {
