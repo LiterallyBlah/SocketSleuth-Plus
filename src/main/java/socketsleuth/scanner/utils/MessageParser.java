@@ -41,6 +41,30 @@ public class MessageParser {
             "([a-zA-Z_][a-zA-Z0-9_]*)=([^&\\s]*)"
     );
 
+    // Patterns for identifying ID-like parameter names (case-insensitive matching done in code)
+    private static final String[] ID_PARAM_PATTERNS = {
+        "user_id", "userId", "user", "uid",
+        "account_id", "accountId", "account", "acct",
+        "id", "ID", "_id", "objectId", "oid",
+        "profile_id", "profileId", "profile",
+        "customer_id", "customerId", "customer",
+        "order_id", "orderId", "order",
+        "session_id", "sessionId", "session",
+        "doc_id", "docId", "document_id", "documentId",
+        "record_id", "recordId", "item_id", "itemId",
+        "member_id", "memberId", "org_id", "orgId"
+    };
+
+    // UUID pattern
+    private static final Pattern UUID_PATTERN = Pattern.compile(
+        "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    );
+
+    // MongoDB ObjectId pattern (24 hex chars)
+    private static final Pattern MONGO_ID_PATTERN = Pattern.compile(
+        "[0-9a-fA-F]{24}"
+    );
+
     /**
      * Represents an injection point in a message.
      */
@@ -268,6 +292,66 @@ public class MessageParser {
         String trimmed = message.trim();
         return (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
                (trimmed.startsWith("[") && trimmed.endsWith("]"));
+    }
+
+    /**
+     * Finds injection points that appear to be ID parameters (for BOLA testing).
+     * Only returns points whose parameter name suggests they are identifiers.
+     */
+    public static List<InjectionPoint> findIdParameters(String message) {
+        List<InjectionPoint> allPoints = findInjectionPoints(message);
+        List<InjectionPoint> idPoints = new ArrayList<>();
+        
+        for (InjectionPoint point : allPoints) {
+            if (isIdParameterName(point.getParamName())) {
+                idPoints.add(point);
+            }
+        }
+        
+        return idPoints;
+    }
+
+    /**
+     * Checks if a parameter name suggests it's an ID field.
+     */
+    public static boolean isIdParameterName(String paramName) {
+        if (paramName == null) return false;
+        String lower = paramName.toLowerCase();
+        
+        for (String pattern : ID_PARAM_PATTERNS) {
+            if (lower.equals(pattern.toLowerCase()) || 
+                lower.contains(pattern.toLowerCase())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Checks if a value looks like a UUID.
+     */
+    public static boolean isUuid(String value) {
+        return value != null && UUID_PATTERN.matcher(value).matches();
+    }
+
+    /**
+     * Checks if a value looks like a MongoDB ObjectId.
+     */
+    public static boolean isMongoId(String value) {
+        return value != null && MONGO_ID_PATTERN.matcher(value).matches();
+    }
+
+    /**
+     * Checks if a value looks like a numeric ID.
+     */
+    public static boolean isNumericId(String value) {
+        if (value == null || value.isEmpty()) return false;
+        try {
+            Long.parseLong(value);
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
     }
 
     /**

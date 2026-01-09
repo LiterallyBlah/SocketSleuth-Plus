@@ -23,6 +23,8 @@ import socketsleuth.scanner.checks.EncryptionCheck;
 import socketsleuth.scanner.checks.IDORPatternCheck;
 import socketsleuth.scanner.checks.TokenInURLCheck;
 import socketsleuth.scanner.checks.VerboseErrorCheck;
+import socketsleuth.scanner.checks.active.AuthBypassCheck;
+import socketsleuth.scanner.checks.active.BOLACheck;
 import socketsleuth.scanner.checks.active.CommandInjectionCheck;
 import socketsleuth.scanner.checks.active.LDAPInjectionCheck;
 import socketsleuth.scanner.checks.active.NoSQLInjectionCheck;
@@ -38,6 +40,7 @@ import java.awt.*;
 import java.lang.reflect.Method;
 import java.util.EnumMap;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -64,6 +67,16 @@ public class WSScanner {
     private JSpinner maxDelaySpinner;
     private JButton startScanButton;
     private JButton stopButton;
+    private JCheckBox reportToBurpCheckbox;
+
+    // Message template selection
+    private JTable messageTemplateTable;
+    private MessageTemplateTableModel messageTemplateModel;
+    private JRadioButton useLastMessageRadio;
+    private JRadioButton selectMessagesRadio;
+
+    // Burp issue reporter
+    private BurpIssueReporter burpIssueReporter;
 
     // Currently selected connection data
     private WebSocketTargetItem selectedTarget;
@@ -75,6 +88,10 @@ public class WSScanner {
         this.messageProvider = messageProvider;
         this.orchestrator = new ScanOrchestrator(api);
         this.categoryCheckboxes = new EnumMap<>(ScanCheckCategory.class);
+        
+        // Initialize Burp issue reporter
+        this.burpIssueReporter = new BurpIssueReporter(api);
+        orchestrator.setBurpIssueReporter(burpIssueReporter);
 
         // Register passive checks
         registerPassiveChecks();
@@ -118,6 +135,10 @@ public class WSScanner {
         orchestrator.registerCheck(new XSSInjectionCheck(api));
         orchestrator.registerCheck(new LDAPInjectionCheck(api));
         orchestrator.registerCheck(new XPathInjectionCheck(api));
+        
+        // Authorization checks
+        orchestrator.registerCheck(new BOLACheck(api));
+        orchestrator.registerCheck(new AuthBypassCheck(api));
 
         int activeCount = orchestrator.getCheckCount() - beforeCount;
         api.logging().logToOutput("[WSScanner] Registered " + activeCount + " active checks");
@@ -132,6 +153,8 @@ public class WSScanner {
         contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.Y_AXIS));
 
         contentPanel.add(createTargetSection());
+        contentPanel.add(Box.createVerticalStrut(15));
+        contentPanel.add(createMessageTemplateSection());
         contentPanel.add(Box.createVerticalStrut(15));
         contentPanel.add(createScanProfileSection());
         contentPanel.add(Box.createVerticalStrut(15));
@@ -186,6 +209,99 @@ public class WSScanner {
         return panel;
     }
 
+    private JPanel createMessageTemplateSection() {
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
+        panel.setBorder(createTitledBorder("Message Templates (for Active Scans)"));
+        panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 200));
+
+        // Radio buttons for selection mode
+        JPanel radioPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 5));
+        ButtonGroup modeGroup = new ButtonGroup();
+        useLastMessageRadio = new JRadioButton("Use last outgoing message (default)", true);
+        selectMessagesRadio = new JRadioButton("Select specific messages:");
+        modeGroup.add(useLastMessageRadio);
+        modeGroup.add(selectMessagesRadio);
+        radioPanel.add(useLastMessageRadio);
+        radioPanel.add(selectMessagesRadio);
+        panel.add(radioPanel, BorderLayout.NORTH);
+
+        // Message table
+        messageTemplateModel = new MessageTemplateTableModel();
+        messageTemplateTable = new JTable(messageTemplateModel);
+        messageTemplateTable.getColumnModel().getColumn(0).setMaxWidth(30);   // Checkbox
+        messageTemplateTable.getColumnModel().getColumn(1).setMaxWidth(40);   // #
+        messageTemplateTable.getColumnModel().getColumn(2).setMaxWidth(80);   // Direction
+        messageTemplateTable.setEnabled(false); // Disabled until selectMessagesRadio is checked
+
+        JScrollPane tableScroll = new JScrollPane(messageTemplateTable);
+        tableScroll.setPreferredSize(new Dimension(400, 100));
+        
+        JPanel tablePanel = new JPanel(new BorderLayout());
+        tablePanel.add(tableScroll, BorderLayout.CENTER);
+
+        // Buttons
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+        JButton selectAllBtn = new JButton("Select All");
+        JButton clearBtn = new JButton("Clear");
+        JButton refreshMsgBtn = new JButton("Refresh Messages");
+        selectAllBtn.addActionListener(e -> messageTemplateModel.selectAll());
+        clearBtn.addActionListener(e -> messageTemplateModel.clearSelection());
+        refreshMsgBtn.addActionListener(e -> refreshMessageTemplates());
+        buttonPanel.add(selectAllBtn);
+        buttonPanel.add(clearBtn);
+        buttonPanel.add(refreshMsgBtn);
+        tablePanel.add(buttonPanel, BorderLayout.SOUTH);
+        
+        panel.add(tablePanel, BorderLayout.CENTER);
+
+        // Toggle table enable based on radio selection
+        selectMessagesRadio.addActionListener(e -> {
+            messageTemplateTable.setEnabled(true);
+            refreshMessageTemplates();
+        });
+        useLastMessageRadio.addActionListener(e -> {
+            messageTemplateTable.setEnabled(false);
+        });
+
+        return panel;
+    }
+
+    private void refreshMessageTemplates() {
+        messageTemplateModel.clear();
+        if (selectedTarget == null || selectedTarget.getSocketId() < 0) {
+            return;
+        }
+
+        Object streamModel = selectedTarget.getStreamModel();
+        if (streamModel == null) return;
+
+        try {
+            Method getRowCount = streamModel.getClass().getMethod("getRowCount");
+            Method getStream = streamModel.getClass().getMethod("getStream", int.class);
+            
+            int count = (int) getRowCount.invoke(streamModel);
+            for (int i = 0; i < count; i++) {
+                Object msg = getStream.invoke(streamModel, i);
+                if (msg == null) continue;
+
+                Object dirObj = msg.getClass().getMethod("getDirection").invoke(msg);
+                String direction = dirObj != null ? dirObj.toString() : "UNKNOWN";
+                
+                // Only show CLIENT_TO_SERVER (outgoing) messages
+                if (direction.contains("CLIENT")) {
+                    Object contentObj = msg.getClass().getMethod("getMessage").invoke(msg);
+                    String content = contentObj != null ? contentObj.toString() : "";
+                    int msgId = (int) msg.getClass().getMethod("getMessageID").invoke(msg);
+                    
+                    messageTemplateModel.addRow(new MessageTemplateTableModel.MessageTemplateRow(
+                        msgId, "-> OUT", content));
+                }
+            }
+        } catch (Exception e) {
+            api.logging().logToError("[WSScanner] Error loading messages: " + e.getMessage());
+        }
+    }
+
     private JPanel createScanProfileSection() {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
         panel.setBorder(createTitledBorder("Scan Profile"));
@@ -238,6 +354,11 @@ public class WSScanner {
         maxDelaySpinner.setPreferredSize(new Dimension(80, 25));
         panel.add(maxDelaySpinner);
         panel.add(new JLabel("ms"));
+
+        panel.add(Box.createHorizontalStrut(30));
+        reportToBurpCheckbox = new JCheckBox("Report to Burp Issues", false);
+        reportToBurpCheckbox.setToolTipText("Add findings to Burp's native Issues panel");
+        panel.add(reportToBurpCheckbox);
 
         return panel;
     }
@@ -300,6 +421,10 @@ public class WSScanner {
         selectedTarget = (WebSocketTargetItem) targetComboBox.getSelectedItem();
         if (selectedTarget != null && selectedTarget.getSocketId() >= 0) {
             api.logging().logToOutput("[WSScanner] Selected target: " + selectedTarget.getUrl());
+            // Refresh message templates when target changes
+            if (selectMessagesRadio.isSelected()) {
+                refreshMessageTemplates();
+            }
         }
     }
 
@@ -372,6 +497,14 @@ public class WSScanner {
             contextBuilder.proxyWebSocket((ProxyWebSocket) selectedTarget.getProxyWebSocket());
         }
 
+        // Add selected template messages if user chose specific messages
+        if (selectMessagesRadio.isSelected()) {
+            List<String> selectedMsgs = messageTemplateModel.getSelectedMessages();
+            if (!selectedMsgs.isEmpty()) {
+                contextBuilder.templateMessages(selectedMsgs);
+            }
+        }
+
         ScanContext context = contextBuilder.build();
 
         // Create and show results window
@@ -395,6 +528,9 @@ public class WSScanner {
                 resultsWindow.onScanComplete();
             });
         });
+
+        // Configure Burp issue reporting
+        burpIssueReporter.setEnabled(reportToBurpCheckbox.isSelected());
 
         // Show results window and start scan
         resultsWindow.showWindow();

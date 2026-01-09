@@ -249,6 +249,28 @@ public abstract class AbstractActiveCheck extends AbstractScannerCheck {
     }
 
     /**
+     * Gets the template messages to use for scanning.
+     * If specific templates were selected in UI, returns those.
+     * Otherwise falls back to the last outgoing message.
+     *
+     * @return List of message templates to test (never null, may be empty)
+     */
+    protected List<String> getTemplateMessages(ScanContext context) {
+        // Check if user selected specific messages
+        if (context.hasTemplateMessages()) {
+            return context.getTemplateMessages();
+        }
+        
+        // Fallback: get last outgoing message
+        List<String> fallback = new ArrayList<>();
+        String lastMessage = getLastOutgoingMessage(context);
+        if (lastMessage != null && !lastMessage.isEmpty()) {
+            fallback.add(lastMessage);
+        }
+        return fallback;
+    }
+
+    /**
      * Truncates a string for logging purposes.
      */
     protected String truncateForLog(String str) {

@@ -21,6 +21,9 @@ import burp.api.montoya.proxy.websocket.ProxyWebSocket;
 import burp.api.montoya.websocket.Direction;
 import websocket.MessageProvider;
 
+import java.util.ArrayList;
+import java.util.List;
+
 
 /**
  * Context passed to scanner checks containing all data needed for analysis.
@@ -34,6 +37,7 @@ public class ScanContext {
     private final ProxyWebSocket proxyWebSocket;
     private final MessageProvider messageProvider;
     private final boolean isActiveMode;
+    private final List<String> templateMessages;
 
     private ScanContext(Builder builder) {
         this.api = builder.api;
@@ -44,6 +48,9 @@ public class ScanContext {
         this.proxyWebSocket = builder.proxyWebSocket;
         this.messageProvider = builder.messageProvider;
         this.isActiveMode = builder.isActiveMode;
+        this.templateMessages = builder.templateMessages != null 
+            ? new ArrayList<>(builder.templateMessages) 
+            : new ArrayList<>();
     }
 
     public MontoyaApi getApi() {
@@ -76,6 +83,21 @@ public class ScanContext {
 
     public boolean isActiveMode() {
         return isActiveMode;
+    }
+
+    /**
+     * Get the list of template messages selected for active scanning.
+     * Returns empty list if none selected (checks should use last outgoing message as fallback).
+     */
+    public List<String> getTemplateMessages() {
+        return new ArrayList<>(templateMessages);
+    }
+
+    /**
+     * Check if specific template messages were selected.
+     */
+    public boolean hasTemplateMessages() {
+        return templateMessages != null && !templateMessages.isEmpty();
     }
 
     /**
@@ -141,6 +163,7 @@ public class ScanContext {
         private ProxyWebSocket proxyWebSocket;
         private MessageProvider messageProvider;
         private boolean isActiveMode;
+        private List<String> templateMessages;
 
         public Builder api(MontoyaApi api) {
             this.api = api;
@@ -179,6 +202,11 @@ public class ScanContext {
 
         public Builder activeMode(boolean isActiveMode) {
             this.isActiveMode = isActiveMode;
+            return this;
+        }
+
+        public Builder templateMessages(List<String> messages) {
+            this.templateMessages = messages;
             return this;
         }
 

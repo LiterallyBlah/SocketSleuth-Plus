@@ -42,6 +42,9 @@ public class ScanOrchestrator {
     private BiConsumer<Integer, Integer> progressCallback; // current, total
     private Runnable completionCallback;
     private Consumer<String> statusCallback;
+    
+    // Burp issue reporter
+    private BurpIssueReporter burpIssueReporter;
 
     public ScanOrchestrator(MontoyaApi api) {
         this.api = api;
@@ -98,6 +101,13 @@ public class ScanOrchestrator {
      */
     public void setStatusCallback(Consumer<String> callback) {
         this.statusCallback = callback;
+    }
+
+    /**
+     * Set the Burp issue reporter for sending findings to Burp's issue panel.
+     */
+    public void setBurpIssueReporter(BurpIssueReporter reporter) {
+        this.burpIssueReporter = reporter;
     }
 
     /**
@@ -223,8 +233,13 @@ public class ScanOrchestrator {
     }
 
     private void reportFinding(ScanFinding finding) {
+        // Report to UI callback
         if (findingCallback != null) {
             SwingUtilities.invokeLater(() -> findingCallback.accept(finding));
+        }
+        // Also report to Burp's issue panel if enabled
+        if (burpIssueReporter != null) {
+            burpIssueReporter.reportFinding(finding);
         }
     }
 
