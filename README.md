@@ -59,7 +59,7 @@ This fork introduces significant UI/UX improvements and new features over the or
 
 1. Clone the repository
    ```
-   git clone https://github.com/YOUR_USERNAME/socketsleuth-plus.git
+   git clone https://github.com/LiterallyBlah/SocketSleuth-Plus.git
    ```
 2. Navigate to the project directory
    ```
