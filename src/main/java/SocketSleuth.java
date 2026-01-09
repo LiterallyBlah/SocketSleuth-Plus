@@ -20,6 +20,7 @@ import burp.api.montoya.ui.UserInterface;
 import burp.api.montoya.ui.editor.HttpRequestEditor;
 import burp.api.montoya.ui.editor.WebSocketMessageEditor;
 import socketsleuth.WebSocketInterceptionRulesTableModel;
+import socketsleuth.scanner.WSScanner;
 import socketsleuth.utils.CommentManager;
 import websocket.MessageProvider;
 
@@ -54,6 +55,7 @@ public class SocketSleuth implements BurpExtension {
     MessageProvider socketProvider;
     SocketSleuthTabbedPanel<WSIntruder> intruderTab;
     SocketSleuthTabbedPanel<AutoRepeaterTab> autoRepeaterTab;
+    WSScanner scannerTab;
 
     @Override
     public void initialize(MontoyaApi api) {
@@ -408,9 +410,11 @@ public class SocketSleuth implements BurpExtension {
         JTabbedPane tabs = new JTabbedPane();
         this.intruderTab = SocketSleuthTabbedPanel.create("WS Intruder", WSIntruder.class, this.api, this.tableModel, this.responseMonitor, this.socketProvider);
         this.autoRepeaterTab = SocketSleuthTabbedPanel.create("Repeater", AutoRepeaterTab.class, this.api, this.tableModel, this.webSocketAutoRepeater);
+        this.scannerTab = new WSScanner(1, this.api, this.tableModel, this.socketProvider);
 
         tabs.addTab("History", this.constructHistoryTab());
         tabs.addTab("WS Intruder", this.intruderTab);
+        tabs.addTab("WS Scanner", this.scannerTab.getContainer());
         tabs.addTab("WS auto-repeater", this.autoRepeaterTab);
         tabs.addTab("Settings", this.constructSettingsTab());
         return tabs;
