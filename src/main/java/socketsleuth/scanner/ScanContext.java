@@ -111,12 +111,15 @@ public class ScanContext {
 
     /**
      * Check if the WebSocket connection uses TLS.
+     * Handles both ws/wss schemes and http/https schemes (as Burp may display either).
      */
     public boolean isSecure() {
         if (url == null) {
             return false;
         }
-        return url.toLowerCase().startsWith("wss://");
+        String urlLower = url.toLowerCase();
+        // Check for secure WebSocket or HTTPS (Burp may show either)
+        return urlLower.startsWith("wss://") || urlLower.startsWith("https://");
     }
 
     /**

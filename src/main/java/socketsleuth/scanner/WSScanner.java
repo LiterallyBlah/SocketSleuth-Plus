@@ -18,6 +18,11 @@ package socketsleuth.scanner;
 import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.http.message.requests.HttpRequest;
 import burp.api.montoya.proxy.websocket.ProxyWebSocket;
+import socketsleuth.scanner.checks.CSWSHOriginCheck;
+import socketsleuth.scanner.checks.EncryptionCheck;
+import socketsleuth.scanner.checks.IDORPatternCheck;
+import socketsleuth.scanner.checks.TokenInURLCheck;
+import socketsleuth.scanner.checks.VerboseErrorCheck;
 import websocket.MessageProvider;
 
 import javax.swing.*;
@@ -65,8 +70,29 @@ public class WSScanner {
         this.orchestrator = new ScanOrchestrator(api);
         this.categoryCheckboxes = new EnumMap<>(ScanCheckCategory.class);
 
+        // Register passive checks
+        registerPassiveChecks();
+
         buildUI();
         refreshTargetList();
+    }
+
+    /**
+     * Registers all passive scanner checks with the orchestrator.
+     */
+    private void registerPassiveChecks() {
+        // CSWSH checks
+        orchestrator.registerCheck(new CSWSHOriginCheck(api));
+
+        // Misconfiguration checks
+        orchestrator.registerCheck(new EncryptionCheck(api));
+        orchestrator.registerCheck(new TokenInURLCheck(api));
+        orchestrator.registerCheck(new VerboseErrorCheck(api));
+
+        // Authorization checks
+        orchestrator.registerCheck(new IDORPatternCheck(api));
+
+        api.logging().logToOutput("[WSScanner] Registered " + orchestrator.getCheckCount() + " passive checks");
     }
 
     private void buildUI() {
