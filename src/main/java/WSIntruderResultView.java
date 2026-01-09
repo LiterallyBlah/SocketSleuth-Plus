@@ -20,6 +20,8 @@ import burp.api.montoya.ui.editor.WebSocketMessageEditor;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
+import javax.swing.event.AncestorEvent;
+import javax.swing.event.AncestorListener;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import java.awt.*;
@@ -32,6 +34,7 @@ public class WSIntruderResultView {
     private JPanel responseEditorPanel;
     private WebSocketMessageEditor messageEditor;
     private WebSocketMessageEditor responseEditor;
+    private boolean dividerLocationSet = false;
 
     public WSIntruderResultView(MontoyaApi api) {
         this.messageEditor = api.userInterface().createWebSocketMessageEditor(EditorOptions.READ_ONLY);
@@ -40,6 +43,32 @@ public class WSIntruderResultView {
         requestEditorPanel.add(this.messageEditor.uiComponent());
         responseEditorPanel.add(this.responseEditor.uiComponent());
         discoveredList.setModel(new DefaultListModel<JSONRPCMethodItem>());
+        
+        // Configure split pane resizing behavior
+        resultSplit.setResizeWeight(0.3); // Give 30% of extra space to the list
+        resultSplit.setContinuousLayout(true);
+        
+        // Set initial divider location after the component is visible
+        container.addAncestorListener(new AncestorListener() {
+            @Override
+            public void ancestorAdded(AncestorEvent event) {
+                if (!dividerLocationSet) {
+                    SwingUtilities.invokeLater(() -> {
+                        int width = resultSplit.getWidth();
+                        if (width > 0) {
+                            resultSplit.setDividerLocation((int)(width * 0.25));
+                        }
+                        dividerLocationSet = true;
+                    });
+                }
+            }
+            
+            @Override
+            public void ancestorRemoved(AncestorEvent event) {}
+            
+            @Override
+            public void ancestorMoved(AncestorEvent event) {}
+        });
 
         discoveredList.addListSelectionListener(new ListSelectionListener() {
             @Override

@@ -21,6 +21,8 @@ import burp.api.montoya.websocket.Direction;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
+import javax.swing.event.AncestorEvent;
+import javax.swing.event.AncestorListener;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 import javax.swing.plaf.FontUIResource;
@@ -60,6 +62,8 @@ public class AutoRepeaterTab implements ContainerProvider {
     String CLIENT_TO_SERVER = "Client to Server";
     String SERVER_TO_CLIENT = "Server to Client";
     String BIDIRECTIONAL = "Bidirectional";
+    
+    private boolean dividerLocationSet = false;
 
     public AutoRepeaterTab(int tabID, MontoyaApi api, TableModel tableModel, WebSocketAutoRepeater webSocketAutoRepeater) {
         this.api = api;
@@ -70,9 +74,6 @@ public class AutoRepeaterTab implements ContainerProvider {
         this.webSocketAutoRepeater = webSocketAutoRepeater;
 
         TableRowSorter<TableModel> rowSorter = new TableRowSorter<TableModel>(this.tableModel);
-
-        primarySplit.setDividerLocation(169);
-        configurationSplit.setDividerLocation(1000);
 
         // Build tabs
         // Tab -> SplitPane: Left (AutoRepeaterMessageTable) Right (MessageEditor)
@@ -99,7 +100,6 @@ public class AutoRepeaterTab implements ContainerProvider {
         // Assign components
         originalSocketSplit.setLeftComponent(messageTable.getContainer());
         originalSocketSplit.setRightComponent(messageEditor.uiComponent());
-        originalSocketSplit.setDividerLocation(800);
         requestTabbedPane.addTab("Target Socket", originalSocketSplit);
 
         DefaultComboBoxModel<String> cbModel = new DefaultComboBoxModel<String>();
@@ -107,6 +107,37 @@ public class AutoRepeaterTab implements ContainerProvider {
         cbModel.addElement(SERVER_TO_CLIENT);
         cbModel.addElement(BIDIRECTIONAL);
         this.directionCombo.setModel(cbModel);
+
+        // Set proportional divider locations AFTER the component is visible and has size
+        container.addAncestorListener(new AncestorListener() {
+            @Override
+            public void ancestorAdded(AncestorEvent event) {
+                if (!dividerLocationSet) {
+                    SwingUtilities.invokeLater(() -> {
+                        int primaryHeight = primarySplit.getHeight();
+                        int configWidth = configurationSplit.getWidth();
+                        int socketWidth = originalSocketSplit.getWidth();
+                        
+                        if (primaryHeight > 0) {
+                            primarySplit.setDividerLocation((int)(primaryHeight * 0.25));
+                        }
+                        if (configWidth > 0) {
+                            configurationSplit.setDividerLocation((int)(configWidth * 0.5));
+                        }
+                        if (socketWidth > 0) {
+                            originalSocketSplit.setDividerLocation((int)(socketWidth * 0.5));
+                        }
+                        dividerLocationSet = true;
+                    });
+                }
+            }
+            
+            @Override
+            public void ancestorRemoved(AncestorEvent event) {}
+            
+            @Override
+            public void ancestorMoved(AncestorEvent event) {}
+        });
 
         setButtonEvents();
     }
@@ -166,11 +197,9 @@ public class AutoRepeaterTab implements ContainerProvider {
 
                 Direction direction = null;
                 String selectedDirection = directionCombo.getSelectedItem().toString();
-                if (selectedDirection == CLIENT_TO_SERVER) {
+                if (selectedDirection.equals(CLIENT_TO_SERVER)) {
                     direction = Direction.CLIENT_TO_SERVER;
-                }
-
-                if (selectedDirection == SERVER_TO_CLIENT) {
+                } else if (selectedDirection.equals(SERVER_TO_CLIENT)) {
                     direction = Direction.SERVER_TO_CLIENT;
                 }
 

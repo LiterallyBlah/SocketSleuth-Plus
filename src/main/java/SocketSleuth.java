@@ -26,7 +26,6 @@ import websocket.MessageProvider;
 import javax.swing.*;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
-import javax.swing.table.AbstractTableModel;
 import javax.swing.table.TableColumnModel;
 import java.awt.*;
 import java.awt.event.ActionEvent;
@@ -69,10 +68,10 @@ public class SocketSleuth implements BurpExtension {
         this.socketProvider = new MessageProvider(api);
         this.webSocketAutoRepeater = new WebSocketAutoRepeater(api, this.wsConnections);
 
-        api.extension().setName("SocketSleuth");
+        api.extension().setName("SocketSleuth+");
         this.socketSleuthTabPanel = constructBurpUi();
 
-        api.userInterface().registerSuiteTab("SocketSleuth", this.socketSleuthTabPanel);
+        api.userInterface().registerSuiteTab("SocketSleuth+", this.socketSleuthTabPanel);
 
         // Create handler for new websocket connections
         // The table might not exist yet, check if there is bugs
@@ -123,7 +122,7 @@ public class SocketSleuth implements BurpExtension {
 
                         WebSocketInterceptionRulesTableModel rulesTableModel = (WebSocketInterceptionRulesTableModel) settingsUI.getInterceptTable().getModel();
 
-                        if (form.getConditionTextField().getText().trim() == "") return;
+                        if (form.getConditionTextField().getText().trim().isEmpty()) return;
 
                         Object[] newRow = new Object[] {
                                 true, // enabled
@@ -357,34 +356,29 @@ public class SocketSleuth implements BurpExtension {
         // Create a popup menu
         JPopupMenu popupMenu = new JPopupMenu();
         JMenuItem commentItem = new JMenuItem("Add comment");
-        commentItem.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                int index = table.getSelectedRow();
-                if (index == -1) {
-                    return;
-                }
-                AbstractTableModel tm = (AbstractTableModel) table.getModel();
-                CommentManager.addEditComment(api.userInterface().swingUtils().suiteFrame(),table, index, 5);
+        commentItem.addActionListener(e -> {
+            int viewIndex = table.getSelectedRow();
+            if (viewIndex == -1) {
+                return;
             }
+            int modelIndex = table.convertRowIndexToModel(viewIndex);
+            CommentManager.addEditComment(api.userInterface().swingUtils().suiteFrame(), table, modelIndex, 5);
         });
 
         JMenuItem intruderItem = new JMenuItem("Send to WS intruder");
-        intruderItem.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                api.logging().logToOutput("its been clicked");
-                WebSocketStreamTableModel tableModel = (WebSocketStreamTableModel) table.getModel();
-                int index = table.getSelectedRow();
-                if (index == -1) {
-                    return;
-                }
-
-                intruderTab.addNewTab(tableModel.getStream(index).getRawMessage());
-
-                // Go to WS intruder tab
-                socketSleuthTabPanel.setSelectedIndex(1);
+        intruderItem.addActionListener(e -> {
+            api.logging().logToOutput("its been clicked");
+            WebSocketStreamTableModel tableModel = (WebSocketStreamTableModel) table.getModel();
+            int viewIndex = table.getSelectedRow();
+            if (viewIndex == -1) {
+                return;
             }
+            int modelIndex = table.convertRowIndexToModel(viewIndex);
+
+            intruderTab.addNewTab(tableModel.getStream(modelIndex).getRawMessage());
+
+            // Go to WS intruder tab
+            socketSleuthTabPanel.setSelectedIndex(1);
         });
 
         popupMenu.add(commentItem);
@@ -445,6 +439,11 @@ public class SocketSleuth implements BurpExtension {
 
         // Set table model for WebSocket connections
         table.setModel(this.tableModel);
+        
+        // Apply custom cell renderers for better UX
+        table.getColumnModel().getColumn(3).setCellRenderer(new socketsleuth.ui.StatusCellRenderer()); // Active column
+        table.getColumnModel().getColumn(4).setCellRenderer(new socketsleuth.ui.StatusCellRenderer()); // TLS column
+        
         this.bindConnectionTableContextMenu(table);
 
         // Handle table row selections
@@ -459,20 +458,24 @@ public class SocketSleuth implements BurpExtension {
                 }
 
                 int selectedViewIndex = table.getSelectedRow();
-                int selectedRowIndex = table.convertRowIndexToView(selectedViewIndex);
-                if (selectedRowIndex == -1) {
-                    api.logging().raiseInfoEvent("selectedRowIndex is -1");
+                if (selectedViewIndex == -1) {
+                    api.logging().raiseInfoEvent("selectedViewIndex is -1");
                     return;
                 }
+                int selectedModelIndex = table.convertRowIndexToModel(selectedViewIndex);
 
-                // get data out of model
-                int socketId = (int) table.getValueAt(selectedRowIndex, 0);
-
-                // Update the stream / message view
+                // get data out of model using the model index
                 WebSocketConnectionTableModel connectionTableModel = (WebSocketConnectionTableModel) table.getModel();
-                WebsocketConnectionTableRow row = connectionTableModel.getConnection(selectedRowIndex);
+                WebsocketConnectionTableRow row = connectionTableModel.getConnection(selectedModelIndex);
+                int socketId = row.getSocketId();
                 uiForm.setSelectedSocketLabel(socketId, row.getUrl());
                 uiForm.getStreamTable().setModel(row.getStreamModel());
+                
+                // Apply direction cell renderer to the stream table
+                JTable streamTable = uiForm.getStreamTable();
+                if (streamTable.getColumnModel().getColumnCount() > 2) {
+                    streamTable.getColumnModel().getColumn(2).setCellRenderer(new socketsleuth.ui.DirectionCellRenderer());
+                }
 
                 // Set upgrade request in right pane
                 upgradeRequestViewer.setRequest(row.getUpgradeRequest());
@@ -492,20 +495,21 @@ public class SocketSleuth implements BurpExtension {
 
                 JTable messageTable = uiForm.getStreamTable();
                 int selectedViewIndex = messageTable.getSelectedRow();
-                int selectedRowIndex = messageTable.convertRowIndexToView(selectedViewIndex);
-                if (selectedRowIndex == -1) {
-                    api.logging().raiseInfoEvent("selectedRowIndex is -1");
+                if (selectedViewIndex == -1) {
+                    api.logging().raiseInfoEvent("selectedViewIndex is -1");
                     return;
                 }
+                int selectedModelIndex = messageTable.convertRowIndexToModel(selectedViewIndex);
 
-
-                int messageId = (int) messageTable.getValueAt(selectedRowIndex, 0);
                 WebSocketStreamTableModel messageTableModel = (WebSocketStreamTableModel) messageTable.getModel();
-                messageViewer.setContents(ByteArray.byteArray(messageTableModel.getStream(selectedRowIndex).getRawMessage()));
+                messageViewer.setContents(ByteArray.byteArray(messageTableModel.getStream(selectedModelIndex).getRawMessage()));
             }
         });
 
         this.bindMessageTableContextMenu(uiForm.getStreamTable());
+        
+        // Bind keyboard shortcuts
+        this.bindKeyboardShortcuts(uiForm.getStreamTable());
 
         // Autosize the table columns - Doesn't work, look at later
         uiForm.getConnectionTable().setAutoResizeMode(JTable.AUTO_RESIZE_OFF);
@@ -525,15 +529,13 @@ public class SocketSleuth implements BurpExtension {
 
         popupMenu.add(commentItem);
 
-        commentItem.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                int index = table.getSelectedRow();
-                if (index == -1) {
-                    return;
-                }
-                CommentManager.addEditComment(api.userInterface().swingUtils().suiteFrame(), table, index, 6);
+        commentItem.addActionListener(e -> {
+            int viewIndex = table.getSelectedRow();
+            if (viewIndex == -1) {
+                return;
             }
+            int modelIndex = table.convertRowIndexToModel(viewIndex);
+            CommentManager.addEditComment(api.userInterface().swingUtils().suiteFrame(), table, modelIndex, 6);
         });
 
         table.addMouseListener(new MouseAdapter() {
@@ -549,6 +551,84 @@ public class SocketSleuth implements BurpExtension {
                     }
 
                     popupMenu.show(e.getComponent(), e.getX(), e.getY());
+                }
+            }
+        });
+    }
+    
+    /**
+     * Binds keyboard shortcuts to the message table for common actions.
+     */
+    private void bindKeyboardShortcuts(JTable table) {
+        // Ctrl+I - Send to WS Intruder
+        table.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
+                .put(KeyStroke.getKeyStroke("control I"), "sendToIntruder");
+        table.getActionMap().put("sendToIntruder", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                int viewIndex = table.getSelectedRow();
+                if (viewIndex == -1) return;
+                int modelIndex = table.convertRowIndexToModel(viewIndex);
+                
+                WebSocketStreamTableModel tableModel = (WebSocketStreamTableModel) table.getModel();
+                intruderTab.addNewTab(tableModel.getStream(modelIndex).getRawMessage());
+                socketSleuthTabPanel.setSelectedIndex(1); // Switch to Intruder tab
+            }
+        });
+        
+        // Ctrl+C - Copy message content
+        table.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
+                .put(KeyStroke.getKeyStroke("control C"), "copyMessage");
+        table.getActionMap().put("copyMessage", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                int viewIndex = table.getSelectedRow();
+                if (viewIndex == -1) return;
+                int modelIndex = table.convertRowIndexToModel(viewIndex);
+                
+                WebSocketStreamTableModel tableModel = (WebSocketStreamTableModel) table.getModel();
+                String message = new String(tableModel.getStream(modelIndex).getRawMessage());
+                
+                java.awt.datatransfer.StringSelection selection = 
+                        new java.awt.datatransfer.StringSelection(message);
+                java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
+                        .setContents(selection, selection);
+            }
+        });
+        
+        // Enter - Add/Edit comment
+        table.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
+                .put(KeyStroke.getKeyStroke("ENTER"), "editComment");
+        table.getActionMap().put("editComment", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                int viewIndex = table.getSelectedRow();
+                if (viewIndex == -1) return;
+                int modelIndex = table.convertRowIndexToModel(viewIndex);
+                CommentManager.addEditComment(api.userInterface().swingUtils().suiteFrame(), table, modelIndex, 5);
+            }
+        });
+        
+        // Ctrl+F - Focus filter field
+        table.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
+                .put(KeyStroke.getKeyStroke("control F"), "focusFilter");
+        table.getActionMap().put("focusFilter", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (uiForm.getFilterPanel() != null) {
+                    uiForm.getFilterPanel().focusFilterField();
+                }
+            }
+        });
+        
+        // Escape - Clear filter and return to table
+        table.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
+                .put(KeyStroke.getKeyStroke("ESCAPE"), "clearFilter");
+        table.getActionMap().put("clearFilter", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (uiForm.getFilterPanel() != null) {
+                    uiForm.getFilterPanel().clearFilter();
                 }
             }
         });

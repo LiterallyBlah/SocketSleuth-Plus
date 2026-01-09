@@ -19,7 +19,6 @@ import burp.api.montoya.core.ByteArray;
 import burp.api.montoya.ui.editor.WebSocketMessageEditor;
 import burp.api.montoya.websocket.Direction;
 import socketsleuth.WebSocketInterceptionRulesTableModel;
-import socketsleuth.intruder.WSIntruderMessageView;
 import socketsleuth.intruder.executors.Sniper;
 import socketsleuth.intruder.payloads.models.IPayloadModel;
 import socketsleuth.intruder.payloads.payloads.IIntruderPayloadType;
@@ -28,15 +27,12 @@ import websocket.MessageProvider;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 
 public class JSONRPCValueBruteForcer {
     private final MessageProvider socketProvider;
     private WebSocketMessageEditor messageEditor;
     private IPayloadModel payloadModel;
     private MontoyaApi api;
-    private WSIntruderMessageView messageView;
     private Sniper executor;
     private JPanel container;
     private JPanel payloadContainer;
@@ -55,42 +51,50 @@ public class JSONRPCValueBruteForcer {
         this.maxDelaySpinner.getModel().setValue(200);
 
         // Payload insertion point setup
-        this.addButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
+        this.addButton.addActionListener(e -> {
+            String currentContents = messageEditor.getContents().toString();
+            String updatedContents;
+
+            // Check if there's a selection
+            java.util.Optional<burp.api.montoya.ui.Selection> selection = messageEditor.selection();
+            if (selection.isPresent()) {
+                // Wrap the selection with § symbols
+                burp.api.montoya.core.Range offsets = selection.get().offsets();
+                int startIndex = offsets.startIndexInclusive();
+                int endIndex = offsets.endIndexExclusive();
+                updatedContents = currentContents.substring(0, startIndex) 
+                        + "§" 
+                        + currentContents.substring(startIndex, endIndex) 
+                        + "§" 
+                        + currentContents.substring(endIndex);
+            } else {
+                // No selection, insert single § at caret position (original behavior)
                 int caretPosition = messageEditor.caretPosition();
+                updatedContents = currentContents.substring(0, caretPosition) + "§" + currentContents.substring(caretPosition);
+            }
+            
+            messageEditor.setContents(ByteArray.byteArray(updatedContents));
 
-                String currentContents = messageEditor.getContents().toString();
-
-                String updatedContents = currentContents.substring(0, caretPosition) + "§" + currentContents.substring(caretPosition);
-
-                messageEditor.setContents(ByteArray.byteArray(updatedContents));
-
-                try {
-                    java.util.List<String> payloads = Utils.extractPayloadPositions(messageEditor.getContents().toString());
-                    payloadPositionCount.setText(String.valueOf(payloads.size()));
-                } catch (Exception ex) {
-                    payloadPositionCount.setText("Unmatched payload");
-                }
+            try {
+                java.util.List<String> payloads = Utils.extractPayloadPositions(messageEditor.getContents().toString());
+                payloadPositionCount.setText(String.valueOf(payloads.size()));
+            } catch (Exception ex) {
+                payloadPositionCount.setText("Unmatched payload");
             }
         });
 
-        this.clearButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                String currentContents = messageEditor.getContents().toString();
-                String updatedContents = currentContents.replaceAll("§", "");
-                messageEditor.setContents(ByteArray.byteArray(updatedContents));
-                payloadPositionCount.setText("0");
-            }
+        this.clearButton.addActionListener(e -> {
+            String currentContents = messageEditor.getContents().toString();
+            String updatedContents = currentContents.replaceAll("§", "");
+            messageEditor.setContents(ByteArray.byteArray(updatedContents));
+            payloadPositionCount.setText("0");
         });
 
         this.directionCombo.addItem(WebSocketInterceptionRulesTableModel.Direction.CLIENT_TO_SERVER);
         this.directionCombo.addItem(WebSocketInterceptionRulesTableModel.Direction.SERVER_TO_CLIENT);
-
-        // Setup results pane
-        this.messageView = new WSIntruderMessageView(api);
-        this.resultsTabbedPane.addTab("All messages", this.messageView.getContainer());
+        
+        // Hide the embedded results panel - results will be shown in a separate window
+        this.resultsTabbedPane.setVisible(false);
     }
 
     public Direction getSelectedDirection() {
@@ -119,8 +123,8 @@ public class JSONRPCValueBruteForcer {
     }
 
     public void setPayloadType(IIntruderPayloadType payloadForm) {
-        // TODO: only suports sniper atm - also will have weird behaviour if changed when running
-        this.executor = new Sniper(this.api, this.messageView, this.socketProvider);
+        // Create executor without a table model - it will be set when attack starts
+        this.executor = new Sniper(this.api, this.socketProvider);
         this.payloadModel = payloadForm.getPayloadModel();
         this.setPayloadTypeContainerPanel(payloadForm.getContainer());
     }

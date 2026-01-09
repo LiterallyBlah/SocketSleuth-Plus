@@ -27,12 +27,18 @@ class JSONRPCMessage {
     private String message;
     private Direction direction;
     private LocalDateTime time;
+    private String payload;  // The payload that triggered this message (for grouping)
 
     public JSONRPCMessage(int id, String message, Direction direction, LocalDateTime time) {
+        this(id, message, direction, time, null);
+    }
+    
+    public JSONRPCMessage(int id, String message, Direction direction, LocalDateTime time, String payload) {
         this.id = id;
         this.message = message;
         this.direction = direction;
         this.time = time;
+        this.payload = payload;
     }
 
     public int getId() {
@@ -58,6 +64,10 @@ class JSONRPCMessage {
     public int getLength() {
         return message.length();
     }
+    
+    public String getPayload() {
+        return payload;
+    }
 }
 
 public class JSONRPCMessageTableModel extends AbstractTableModel {
@@ -65,22 +75,37 @@ public class JSONRPCMessageTableModel extends AbstractTableModel {
     private static final long serialVersionUID = 1L;
 
     private List<JSONRPCMessage> streams = new ArrayList<>();
-    private String[] columns = { "Message ID", "Message", "Direction", "Length", "Time" };
-    private Class<?>[] columnTypes = { Integer.class, String.class, String.class, Integer.class, LocalDateTime.class };
+    private String[] columns = { "Message ID", "Message", "Direction", "Length", "Time", "Payload" };
+    private Class<?>[] columnTypes = { Integer.class, String.class, String.class, Integer.class, LocalDateTime.class, String.class };
 
+    /**
+     * Add a message without payload tracking (for backwards compatibility).
+     */
     public void addMessage(String message, Direction direction) {
+        addMessage(message, direction, null);
+    }
+    
+    /**
+     * Add a message with payload tracking for request/response grouping.
+     * @param message The message content
+     * @param direction The direction of the message
+     * @param payload The payload that triggered this message (null for responses)
+     */
+    public void addMessage(String message, Direction direction, String payload) {
+        int index = streams.size();
         streams.add(new JSONRPCMessage(
-                streams.size(),
+                index,
                 message,
                 direction,
-                LocalDateTime.now()
+                LocalDateTime.now(),
+                payload
         ));
-        fireTableDataChanged();
+        fireTableRowsInserted(index, index);
     }
 
     public void removeMessage(int row) {
         streams.remove(row);
-        fireTableDataChanged();
+        fireTableRowsDeleted(row, row);
     }
 
     public JSONRPCMessage getMessage(int row) {
@@ -89,6 +114,17 @@ public class JSONRPCMessageTableModel extends AbstractTableModel {
 
     public List<JSONRPCMessage> getMessages() {
         return streams;
+    }
+    
+    /**
+     * Clear all messages from the table.
+     */
+    public void clear() {
+        int size = streams.size();
+        if (size > 0) {
+            streams.clear();
+            fireTableRowsDeleted(0, size - 1);
+        }
     }
 
     @Override
@@ -110,11 +146,14 @@ public class JSONRPCMessageTableModel extends AbstractTableModel {
             case 1:
                 return stream.getMessage();
             case 2:
-                return stream.getDirection();
+                // Return string representation for proper sorting/filtering
+                return stream.getDirection() != null ? stream.getDirection().toString() : "";
             case 3:
                 return stream.getLength();
             case 4:
                 return stream.getTime();
+            case 5:
+                return stream.getPayload() != null ? stream.getPayload() : "";
             default:
                 return null;
         }

@@ -19,17 +19,25 @@ import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.core.ByteArray;
 import burp.api.montoya.ui.editor.EditorOptions;
 import burp.api.montoya.ui.editor.WebSocketMessageEditor;
+import socketsleuth.ui.DirectionCellRenderer;
+import socketsleuth.ui.MessageFilterPanel;
 
 import javax.swing.*;
+import javax.swing.event.AncestorEvent;
+import javax.swing.event.AncestorListener;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
+import javax.swing.table.TableColumn;
 import java.awt.*;
 
 public class WSIntruderMessageView {
     private JPanel container;
-    private MontoyaApi api;
     private JSplitPane resultSplitPane;
     private JTable messageTable;
+    private JScrollPane tableScrollPane;
+    private JPanel tableContainer;
+    private MessageFilterPanel filterPanel;
+    private boolean dividerLocationSet = false;
 
     private WebSocketMessageEditor messageEditor;
 
@@ -37,11 +45,62 @@ public class WSIntruderMessageView {
 
     public WSIntruderMessageView(MontoyaApi api) {
         this.messageEditor = api.userInterface().createWebSocketMessageEditor(EditorOptions.READ_ONLY);
-        this.api = api;
-        this.resultSplitPane.setRightComponent(this.messageEditor.uiComponent());
 
         this.tableModel = new JSONRPCMessageTableModel();
         messageTable.setModel(this.tableModel);
+        
+        // Enable sorting
+        messageTable.setAutoCreateRowSorter(true);
+        
+        // Configure column widths
+        configureColumnWidths();
+        
+        // Add direction cell renderer
+        messageTable.getColumnModel().getColumn(2).setCellRenderer(new DirectionCellRenderer());
+        
+        // Create filter panel and wrap the table
+        this.filterPanel = new MessageFilterPanel();
+        this.filterPanel.setTargetTable(this.messageTable);
+        
+        // Create a container panel with filter at top and scrollable table below
+        this.tableContainer = new JPanel(new BorderLayout());
+        this.tableContainer.add(filterPanel, BorderLayout.NORTH);
+        
+        // Get the scroll pane from the left component (set by form designer)
+        Component leftComponent = resultSplitPane.getLeftComponent();
+        if (leftComponent instanceof JScrollPane) {
+            this.tableScrollPane = (JScrollPane) leftComponent;
+            this.tableContainer.add(tableScrollPane, BorderLayout.CENTER);
+            resultSplitPane.setLeftComponent(tableContainer);
+        }
+        
+        resultSplitPane.setRightComponent(this.messageEditor.uiComponent());
+        
+        // Configure split pane resizing behavior
+        resultSplitPane.setResizeWeight(0.6); // Give 60% of extra space to the table
+        resultSplitPane.setContinuousLayout(true);
+        
+        // Set initial divider location after the component is visible
+        container.addAncestorListener(new AncestorListener() {
+            @Override
+            public void ancestorAdded(AncestorEvent event) {
+                if (!dividerLocationSet) {
+                    SwingUtilities.invokeLater(() -> {
+                        int width = resultSplitPane.getWidth();
+                        if (width > 0) {
+                            resultSplitPane.setDividerLocation((int)(width * 0.55));
+                        }
+                        dividerLocationSet = true;
+                    });
+                }
+            }
+            
+            @Override
+            public void ancestorRemoved(AncestorEvent event) {}
+            
+            @Override
+            public void ancestorMoved(AncestorEvent event) {}
+        });
 
         this.messageTable.getSelectionModel().addListSelectionListener(new ListSelectionListener() {
             @Override
@@ -49,13 +108,48 @@ public class WSIntruderMessageView {
                 if (!e.getValueIsAdjusting()) {
                     int selectedRow = messageTable.getSelectedRow();
                     if (selectedRow != -1) {
+                        // Convert view row to model row for sorted tables
+                        int modelRow = messageTable.convertRowIndexToModel(selectedRow);
                         JSONRPCMessageTableModel model = (JSONRPCMessageTableModel) messageTable.getModel();
-                        JSONRPCMessage message = model.getMessage(selectedRow);
+                        JSONRPCMessage message = model.getMessage(modelRow);
                         messageEditor.setContents(ByteArray.byteArray(message.getMessage()));
                     }
                 }
             }
         });
+    }
+    
+    /**
+     * Configure default column widths for better display.
+     */
+    private void configureColumnWidths() {
+        // Column indices: 0=ID, 1=Message, 2=Direction, 3=Length, 4=Time, 5=Payload
+        TableColumn idColumn = messageTable.getColumnModel().getColumn(0);
+        idColumn.setPreferredWidth(60);
+        idColumn.setMaxWidth(80);
+        
+        TableColumn messageColumn = messageTable.getColumnModel().getColumn(1);
+        messageColumn.setPreferredWidth(350);
+        
+        TableColumn directionColumn = messageTable.getColumnModel().getColumn(2);
+        directionColumn.setPreferredWidth(80);
+        directionColumn.setMaxWidth(100);
+        
+        TableColumn lengthColumn = messageTable.getColumnModel().getColumn(3);
+        lengthColumn.setPreferredWidth(70);
+        lengthColumn.setMaxWidth(90);
+        
+        TableColumn timeColumn = messageTable.getColumnModel().getColumn(4);
+        timeColumn.setPreferredWidth(140);
+        timeColumn.setMaxWidth(170);
+        
+        TableColumn payloadColumn = messageTable.getColumnModel().getColumn(5);
+        payloadColumn.setPreferredWidth(120);
+        payloadColumn.setMaxWidth(200);
+    }
+    
+    public MessageFilterPanel getFilterPanel() {
+        return filterPanel;
     }
 
     public JSONRPCMessageTableModel getTableModel() {

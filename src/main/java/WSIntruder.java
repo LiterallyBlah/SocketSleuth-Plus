@@ -21,6 +21,7 @@ import burp.api.montoya.ui.editor.WebSocketMessageEditor;
 import burp.api.montoya.websocket.Direction;
 import org.json.JSONException;
 import org.json.JSONObject;
+import socketsleuth.intruder.WSIntruderResultsWindow;
 import socketsleuth.intruder.payloads.payloads.ui.NumericListForm;
 import websocket.MessageProvider;
 
@@ -64,11 +65,18 @@ public class WSIntruder implements ContainerProvider {
             // Not so nice but setContents uses custom ByteArray
             this.messageEditor.setContents(ByteArray.byteArray(new String((byte[]) data)));
 
-            // Also not so nice, it results in two panels being created - this is because the
-            // JSONRPC auto detect is run during creation of the panel, and in the first time
-            // there is no data in the WS editor. This is a hack to auto detect when added via
-            // right click context menu.
-            setWsIntruderPanel(constructJSONRPCMethodPanel());
+            // Refresh the panel based on current attack type selection
+            WSIntruderType selectedOption = (WSIntruderType) getAttackTypeCombo().getSelectedItem();
+            switch (selectedOption) {
+                case JSONRPCMETHOD:
+                    setWsIntruderPanel(constructJSONRPCMethodPanel());
+                    break;
+                case SNIPER:
+                    setWsIntruderPanel(constructJSONRPCValueBruteForcerPanel());
+                    break;
+                default:
+                    break;
+            }
         }
     }
 
@@ -102,6 +110,7 @@ public class WSIntruder implements ContainerProvider {
         this.socketProvider = socketProvider;
 
         this.getAttackTypeCombo().setModel(new DefaultComboBoxModel<>(WSIntruderType.values()));
+        this.getAttackTypeCombo().setSelectedItem(WSIntruderType.SNIPER);
         this.getAttackTypeCombo().addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -118,7 +127,7 @@ public class WSIntruder implements ContainerProvider {
             }
         });
 
-        this.setWsIntruderPanel(constructJSONRPCMethodPanel());
+        this.setWsIntruderPanel(constructJSONRPCValueBruteForcerPanel());
 
 
         this.selectWebSocketButton.addActionListener(new ActionListener() {
@@ -179,25 +188,22 @@ public class WSIntruder implements ContainerProvider {
         setBruteForcerPayloadSimpleList(bruteForcer);
 
         // Handle switching payload type
-        bruteForcer.getPayloadTypeCombo().addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                BruteForcePayloadTypeOption selectedOption = (BruteForcePayloadTypeOption) bruteForcer.getPayloadTypeCombo().getSelectedItem();
+        bruteForcer.getPayloadTypeCombo().addActionListener(e -> {
+            BruteForcePayloadTypeOption selectedOption = (BruteForcePayloadTypeOption) bruteForcer.getPayloadTypeCombo().getSelectedItem();
 
-                switch (selectedOption) {
-                    case SIMPLE_LIST:
-                        setBruteForcerPayloadSimpleList(bruteForcer);
-                        break;
-                    case NUMBERS:
-                        setBruteForcerPayloadNumeric(bruteForcer);
-                        break;
-                    default:
-                        break;
-                }
-
+            switch (selectedOption) {
+                case SIMPLE_LIST:
+                    setBruteForcerPayloadSimpleList(bruteForcer);
+                    break;
+                case NUMBERS:
+                    setBruteForcerPayloadNumeric(bruteForcer);
+                    break;
+                default:
+                    break;
             }
         });
 
+        // Results are shown in a separate window, so just return the container
         return bruteForcer.getContainer();
     }
 
@@ -206,48 +212,57 @@ public class WSIntruder implements ContainerProvider {
         bruteForcer.setPayloadType(numericListForm);
 
         this.removeActionListeners(bruteForcer.getStartAttackButton());
-        bruteForcer.getStartAttackButton().addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                if (!isWebSocketSelected()) {
-                    JOptionPane.showMessageDialog(
-                            api.userInterface().swingUtils().suiteFrame(),
-                            "Please select a WebSocket using the button above.",
-                            "No WebSocket selected", JOptionPane.WARNING_MESSAGE
-                    );
-                    return;
-                }
-
-                // Validate form and set values in model
-                try {
-                    numericListForm.setFormValuesInModel();
-                } catch (Exception ex) {
-                    JOptionPane.showMessageDialog(
-                            api.userInterface().swingUtils().suiteFrame(),
-                            "A validation error occurred: " + ex.getMessage(),
-                            "Invalid configuration", JOptionPane.WARNING_MESSAGE
-                    );
-                    return;
-                }
-
-                if (bruteForcer.getExecutor().isRunning()) {
-                    api.logging().logToOutput("Its already running running - please wait.");
-                    return;
-                }
-
-                int minDelay = (int) bruteForcer.getMinDelaySpinner().getModel().getValue();
-                int maxDelay = (int) bruteForcer.getMaxDelaySpinner().getModel().getValue();
-                bruteForcer.getExecutor().setMinDelay(minDelay);
-                bruteForcer.getExecutor().setMaxDelay(maxDelay);
-
-                bruteForcer.getExecutor().start(
-                        proxyWebSocket,
-                        socketId,
-                        numericListForm.getPayloadModel(),
-                        messageEditor.getContents().toString(),
-                        bruteForcer.getSelectedDirection()
+        bruteForcer.getStartAttackButton().addActionListener(e -> {
+            if (!isWebSocketSelected()) {
+                JOptionPane.showMessageDialog(
+                        api.userInterface().swingUtils().suiteFrame(),
+                        "Please select a WebSocket using the button above.",
+                        "No WebSocket selected", JOptionPane.WARNING_MESSAGE
                 );
+                return;
             }
+
+            // Validate form and set values in model
+            try {
+                numericListForm.setFormValuesInModel();
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(
+                        api.userInterface().swingUtils().suiteFrame(),
+                        "A validation error occurred: " + ex.getMessage(),
+                        "Invalid configuration", JOptionPane.WARNING_MESSAGE
+                );
+                return;
+            }
+
+            if (bruteForcer.getExecutor().isRunning()) {
+                api.logging().logToOutput("Its already running running - please wait.");
+                return;
+            }
+
+            int minDelay = (int) bruteForcer.getMinDelaySpinner().getModel().getValue();
+            int maxDelay = (int) bruteForcer.getMaxDelaySpinner().getModel().getValue();
+            bruteForcer.getExecutor().setMinDelay(minDelay);
+            bruteForcer.getExecutor().setMaxDelay(maxDelay);
+            
+            // Create and show results window
+            String websocketInfo = "Socket " + socketId;
+            WSIntruderResultsWindow resultsWindow = new WSIntruderResultsWindow(api, bruteForcer.getExecutor(), websocketInfo);
+            
+            // Wire up the executor to use the results window's table model
+            bruteForcer.getExecutor().setTableModel(resultsWindow.getTableModel());
+            bruteForcer.getExecutor().setProgressCallback(resultsWindow::updateProgress);
+            bruteForcer.getExecutor().setCompletionCallback(resultsWindow::onAttackComplete);
+            
+            // Show the window
+            resultsWindow.showWindow();
+
+            bruteForcer.getExecutor().start(
+                    proxyWebSocket,
+                    socketId,
+                    numericListForm.getPayloadModel(),
+                    messageEditor.getContents().toString(),
+                    bruteForcer.getSelectedDirection()
+            );
         });
     }
 
@@ -265,38 +280,45 @@ public class WSIntruder implements ContainerProvider {
 
         // This should be moved into the actual bruteforcer class
         this.removeActionListeners(bruteForcer.getStartAttackButton());
-        bruteForcer.getStartAttackButton().addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                if (!isWebSocketSelected()) {
-                    JOptionPane.showMessageDialog(
-                            api.userInterface().swingUtils().suiteFrame(),
-                            "Please select a WebSocket using the button above.",
-                            "No WebSocket selected", JOptionPane.WARNING_MESSAGE
-                    );
-                    return;
-                }
-
-                if (bruteForcer.getExecutor().isRunning()) {
-                    api.logging().logToOutput("Already running running - please wait.");
-                    return;
-                }
-
-                int minDelay = (int) bruteForcer.getMinDelaySpinner().getModel().getValue();
-                int maxDelay = (int) bruteForcer.getMaxDelaySpinner().getModel().getValue();
-                bruteForcer.getExecutor().setMinDelay(minDelay);
-                bruteForcer.getExecutor().setMaxDelay(maxDelay);
-
-                bruteForcer.getExecutor().start(
-                        proxyWebSocket,
-                        socketId,
-                        simpleList.getPayloadModel(),
-                        messageEditor.getContents().toString(),
-                        bruteForcer.getSelectedDirection());
+        bruteForcer.getStartAttackButton().addActionListener(e -> {
+            if (!isWebSocketSelected()) {
+                JOptionPane.showMessageDialog(
+                        api.userInterface().swingUtils().suiteFrame(),
+                        "Please select a WebSocket using the button above.",
+                        "No WebSocket selected", JOptionPane.WARNING_MESSAGE
+                );
+                return;
             }
+
+            if (bruteForcer.getExecutor().isRunning()) {
+                api.logging().logToOutput("Already running running - please wait.");
+                return;
+            }
+
+            int minDelay = (int) bruteForcer.getMinDelaySpinner().getModel().getValue();
+            int maxDelay = (int) bruteForcer.getMaxDelaySpinner().getModel().getValue();
+            bruteForcer.getExecutor().setMinDelay(minDelay);
+            bruteForcer.getExecutor().setMaxDelay(maxDelay);
+            
+            // Create and show results window
+            String websocketInfo = "Socket " + socketId;
+            WSIntruderResultsWindow resultsWindow = new WSIntruderResultsWindow(api, bruteForcer.getExecutor(), websocketInfo);
+            
+            // Wire up the executor to use the results window's table model
+            bruteForcer.getExecutor().setTableModel(resultsWindow.getTableModel());
+            bruteForcer.getExecutor().setProgressCallback(resultsWindow::updateProgress);
+            bruteForcer.getExecutor().setCompletionCallback(resultsWindow::onAttackComplete);
+            
+            // Show the window
+            resultsWindow.showWindow();
+
+            bruteForcer.getExecutor().start(
+                    proxyWebSocket,
+                    socketId,
+                    simpleList.getPayloadModel(),
+                    messageEditor.getContents().toString(),
+                    bruteForcer.getSelectedDirection());
         });
-
-
     }
 
     private JPanel constructJSONRPCMethodPanel() {
@@ -361,10 +383,10 @@ public class WSIntruder implements ContainerProvider {
                     return;
                 }
 
-
                 Random rand = new Random();
                 int minDelay = (int) jsonrpcIntruder.getMinDelaySpinner().getModel().getValue();
                 int maxDelay = (int) jsonrpcIntruder.getMaxDelaySpinner().getModel().getValue();
+                final int totalMethods = listModel.size();
 
                 api.logging().logToOutput(
                         "Starting JSONRPC method discovery with Min Delay: "
@@ -372,13 +394,28 @@ public class WSIntruder implements ContainerProvider {
                                 + " Max Delay: "
                                 + maxDelay
                                 + " and Wordlist Size: "
-                                + listModel.size()
+                                + totalMethods
                 );
 
+                // Create and show the results window
+                String websocketInfo = "Socket " + socketId;
+                JSONRPCDiscoveryResultsWindow resultsWindow = new JSONRPCDiscoveryResultsWindow(
+                        api, websocketInfo);
+                
+                // Register the results window as a listener for events
+                responseMonitor.addMethodDetectedListener(tabId, resultsWindow);
+                responseMonitor.addResponseReceivedListener(tabId, resultsWindow);
+                
                 Thread thread = new Thread(() -> {
                     // TODO: Allow this to be specified in the UI
                     int currentId = 10000;
-                    for (int i = 0; i < listModel.size(); i++) {
+                    for (int i = 0; i < totalMethods; i++) {
+                        // Check if cancelled
+                        if (resultsWindow.isCancelled() || Thread.currentThread().isInterrupted()) {
+                            api.logging().logToOutput("JSONRPC Method discovery cancelled");
+                            break;
+                        }
+                        
                         // Do discovery
                         String item = listModel.getElementAt(i);
                         JSONObject jsonObject = new JSONObject(basePayload);
@@ -394,18 +431,26 @@ public class WSIntruder implements ContainerProvider {
 
                         proxyWebSocket.sendTextMessage(jsonObject.toString(), Direction.CLIENT_TO_SERVER);
                         currentId++;
+                        
+                        // Update progress
+                        final int current = i + 1;
+                        resultsWindow.updateProgress(current, totalMethods);
 
                         // Delay
                         int delay = rand.nextInt(maxDelay - minDelay + 1) + minDelay;
                         try {
                             Thread.sleep(delay);
                         } catch (InterruptedException ex) {
-                            ex.printStackTrace();
+                            api.logging().logToOutput("JSONRPC Method discovery interrupted");
+                            break;
                         }
                     }
                     api.logging().logToOutput("JSONRPC Method discovery request sending complete");
+                    resultsWindow.onDiscoveryComplete();
                 });
 
+                resultsWindow.setDiscoveryThread(thread);
+                resultsWindow.showWindow();
                 thread.start();
             }
         });

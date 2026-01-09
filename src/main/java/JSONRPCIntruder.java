@@ -19,7 +19,6 @@ import burp.api.montoya.core.ByteArray;
 import burp.api.montoya.ui.editor.WebSocketMessageEditor;
 import org.json.JSONException;
 import org.json.JSONObject;
-import socketsleuth.intruder.WSIntruderMessageView;
 
 import javax.swing.*;
 import javax.swing.event.ChangeEvent;
@@ -50,8 +49,6 @@ public class JSONRPCIntruder implements MethodDetectedListener, ResponseReceived
     private JLabel wordlistCountLabel;
     private JSpinner minDelaySpinner;
     private JSpinner maxDelaySpinner;
-    private WSIntruderResultView resultView;
-    private WSIntruderMessageView messageView;
 
     public JSpinner getMinDelaySpinner() {
         return minDelaySpinner;
@@ -152,10 +149,9 @@ public class JSONRPCIntruder implements MethodDetectedListener, ResponseReceived
             }
         });
 
-        this.resultView = new WSIntruderResultView(api);
-        this.messageView = new WSIntruderMessageView(api);
-        this.resultTabbedPane.addTab("Results", this.resultView.getContainer());
-        this.resultTabbedPane.addTab("All messages", this.messageView.getContainer());
+        // Results are now shown in a dedicated window when discovery starts,
+        // so hide the embedded results panel
+        this.resultTabbedPane.setVisible(false);
     }
 
     {
@@ -308,15 +304,13 @@ public class JSONRPCIntruder implements MethodDetectedListener, ResponseReceived
     }
 
     public void onMethodDetected(MethodDetectedEvent event) {
-        api.logging().logToOutput("Method discovered: " + event.getMethodName());
-
-        // Handle positive results display
-        DefaultListModel<JSONRPCMethodItem> listModel = (DefaultListModel<JSONRPCMethodItem>) this.resultView.getDiscoveredList().getModel();
-        listModel.addElement(new JSONRPCMethodItem(event.getMethodName(), event.getRequest().getRequest().toString(), event.getResponse()));
+        // Results are now handled by the dedicated results window
+        // This method is kept for interface compatibility but is a no-op
     }
 
     public void onResponseReceived(MessageEvent event) {
-        this.messageView.getTableModel().addMessage(event.getMessage(), event.getDirection());
+        // Results are now handled by the dedicated results window
+        // This method is kept for interface compatibility but is a no-op
     }
 
     public void attemptAutoDetectJSONRPC(WebSocketMessageEditor messageEditor) {

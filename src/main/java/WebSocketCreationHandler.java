@@ -65,11 +65,6 @@ class WebSocketCreationHandler implements ProxyWebSocketCreationHandler {
     public void handleWebSocketCreation(ProxyWebSocketCreation webSocketCreation) {
         logger.logToOutput("New WS connection received");
 
-        // Don't loose track of the selected table
-        int selectedConnectionIndex = connectionTable.getSelectedRow();
-        ListSelectionModel selectionModel = connectionTable.getSelectionModel();
-        boolean isSelectionEmpty = selectionModel.isSelectionEmpty();
-
         // Store off the WebSocket so we can access it later
         WebSocketContainer container = new WebSocketContainer();
         container.setWebSocketCreation(webSocketCreation);
@@ -85,21 +80,14 @@ class WebSocketCreationHandler implements ProxyWebSocketCreationHandler {
         ));
 
         // TODO: Investigate if we can get the socketId form burp instead of making our own
-        int socketId = this.connections.size();
+        final int socketId = this.connections.size();
         this.connections.put(socketId, container);
         this.socketProvider.handleSocketCreated(socketId, webSocketCreation);
 
-        // Get the new row from container and add to actual table model
-        this.tableModel.addConnection(container.getTableRow());
-
-        // Restore the selection if there was a previous selection
-        if (!isSelectionEmpty) {
-            selectionModel.setSelectionInterval(selectedConnectionIndex, selectedConnectionIndex);
-        } else {
-            selectionModel.clearSelection();
-        }
-
-        // Close handler? don't think we can tell :(
+        // Get the new row from container and add to actual table model (on EDT)
+        SwingUtilities.invokeLater(() -> {
+            this.tableModel.addConnection(container.getTableRow());
+        });
 
         // Setup handler for messages within WS stream
         webSocketCreation.proxyWebSocket().registerProxyMessageHandler(
@@ -114,7 +102,7 @@ class WebSocketCreationHandler implements ProxyWebSocketCreationHandler {
                             @Override
                             public void handleConnectionClosed() {
                                 container.getTableRow().setActive(false);
-                                tableModel.fireTableDataChanged();
+                                tableModel.updateConnection(socketId);
                             }
                         },
                         this.responseMonitor,

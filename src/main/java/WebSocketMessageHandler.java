@@ -76,23 +76,16 @@ class WebSocketMessageHandler implements ProxyMessageHandler {
         // Handle autorepeater rules
         this.webSocketAutoRepeater.onMessageReceived(this.socketId, new InterceptedMessageFacade(interceptedTextMessage));
 
-        int selectedRowIndex = streamTable.getSelectedRow();
-        ListSelectionModel selectionModel = streamTable.getSelectionModel();
-        boolean isSelectionEmpty = selectionModel.isSelectionEmpty();
-
-        streamModel.addStream(new WebSocketStream(
-                streamModel.getRowCount(),
-                interceptedTextMessage,
-                LocalDateTime.now(),
-                ""
-        ));
-
-        // Restore the selection if there was a previous selection
-        if (!isSelectionEmpty) {
-            selectionModel.setSelectionInterval(selectedRowIndex, selectedRowIndex);
-        } else {
-            selectionModel.clearSelection();
-        }
+        // Update UI on the Event Dispatch Thread
+        final InterceptedTextMessage message = interceptedTextMessage;
+        SwingUtilities.invokeLater(() -> {
+            streamModel.addStream(new WebSocketStream(
+                    streamModel.getRowCount(),
+                    message,
+                    LocalDateTime.now(),
+                    ""
+            ));
+        });
 
         if (shouldInterceptMessage(this.interceptionRules, interceptedTextMessage)) {
             // This is the in the API example but seems to break WSs :/
@@ -276,23 +269,16 @@ class WebSocketMessageHandler implements ProxyMessageHandler {
 
     @Override
     public BinaryMessageReceivedAction handleBinaryMessageReceived(InterceptedBinaryMessage interceptedBinaryMessage) {
-        int selectedRowIndex = streamTable.getSelectedRow();
-        ListSelectionModel selectionModel = streamTable.getSelectionModel();
-        boolean isSelectionEmpty = selectionModel.isSelectionEmpty();
-
-        streamModel.addStream(new WebSocketStream(
-                streamModel.getRowCount(),
-                interceptedBinaryMessage,
-                LocalDateTime.now(),
-                ""
-        ));
-
-        // Restore the selection if there was a previous selection
-        if (!isSelectionEmpty) {
-            selectionModel.setSelectionInterval(selectedRowIndex, selectedRowIndex);
-        } else {
-            selectionModel.clearSelection();
-        }
+        // Update UI on the Event Dispatch Thread
+        final InterceptedBinaryMessage message = interceptedBinaryMessage;
+        SwingUtilities.invokeLater(() -> {
+            streamModel.addStream(new WebSocketStream(
+                    streamModel.getRowCount(),
+                    message,
+                    LocalDateTime.now(),
+                    ""
+            ));
+        });
         return BinaryMessageReceivedAction.continueWith(interceptedBinaryMessage);
     }
 
@@ -305,6 +291,9 @@ class WebSocketMessageHandler implements ProxyMessageHandler {
     public void onClose() {
         ProxyMessageHandler.super.onClose();
         api.logging().logToOutput("socket is closing");
-        this.socketCloseCallback.handleConnectionClosed();
+        // Update UI on the Event Dispatch Thread
+        SwingUtilities.invokeLater(() -> {
+            this.socketCloseCallback.handleConnectionClosed();
+        });
     }
 }

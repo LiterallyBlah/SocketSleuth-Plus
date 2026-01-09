@@ -74,4 +74,17 @@ public class NumericPayloadModel implements IPayloadModel<String> {
             }
         };
     }
+    
+    /**
+     * Returns the total number of payloads in this model.
+     *
+     * @return the number of payloads
+     */
+    @Override
+    public int size() {
+        if (step <= 0) {
+            return 0;
+        }
+        return Math.max(0, (to - from) / step + 1);
+    }
 }

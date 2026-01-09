@@ -19,6 +19,7 @@ import burp.api.montoya.proxy.websocket.InterceptedBinaryMessage;
 import burp.api.montoya.proxy.websocket.InterceptedTextMessage;
 import burp.api.montoya.websocket.Direction;
 
+import javax.swing.SwingUtilities;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -60,57 +61,68 @@ public class WebSocketAutoRepeater {
 
                 // When no direction is set, its bidirectional
                 if (config.getDirection() != null) {
-                    if (config.getDirection().toString() == Direction.CLIENT_TO_SERVER.toString()) {
-                        if (!message.direction().toString().equals("CLIENT_TO_SERVER")) continue;
+                    if (config.getDirection() == Direction.CLIENT_TO_SERVER) {
+                        if (message.direction() != Direction.CLIENT_TO_SERVER) continue;
                     }
 
-                    if (config.getDirection().toString() == Direction.SERVER_TO_CLIENT.toString()) {
-                        if (!message.direction().toString().equals("SERVER_TO_CLIENT")) continue;
+                    if (config.getDirection() == Direction.SERVER_TO_CLIENT) {
+                        if (message.direction() != Direction.SERVER_TO_CLIENT) continue;
                     }
                 }
 
                 api.logging().logToOutput("direction is: " + config.getDirection());
 
-                WebSocketStream streamItem;
+                // Send the message to target socket
                 if (message.isText()) {
                     target.getWebSocketCreation().proxyWebSocket().sendTextMessage(message.stringPayload(), message.direction());
-                    streamItem = new WebSocketStream(
-                            config.getStreamTableModel().getRowCount(),
-                            (InterceptedTextMessage) message.getInterceptedMessage(),
-                            LocalDateTime.now(),
-                            "");
                 } else {
                     // This is not ideal, we should be able to pass the raw byte[]
                     // TODO; handle raw byte[] to ByteArray
                     target.getWebSocketCreation().proxyWebSocket().sendBinaryMessage(ByteArray.byteArray(message.stringPayload()), message.direction());
-                    streamItem = new WebSocketStream(
-                            config.getStreamTableModel().getRowCount(),
-                            (InterceptedBinaryMessage) message.getInterceptedMessage(),
-                            LocalDateTime.now(),
-                            "");
                 }
 
-                streamItem.setInjected(true);
-                config.getStreamTableModel().addStream(streamItem);
+                // Update UI on the Event Dispatch Thread
+                final WebSocketAutoRepeaterStreamTableModel streamTableModel = config.getStreamTableModel();
+                SwingUtilities.invokeLater(() -> {
+                    WebSocketStream streamItem;
+                    if (message.isText()) {
+                        streamItem = new WebSocketStream(
+                                streamTableModel.getRowCount(),
+                                (InterceptedTextMessage) message.getInterceptedMessage(),
+                                LocalDateTime.now(),
+                                "");
+                    } else {
+                        streamItem = new WebSocketStream(
+                                streamTableModel.getRowCount(),
+                                (InterceptedBinaryMessage) message.getInterceptedMessage(),
+                                LocalDateTime.now(),
+                                "");
+                    }
+                    streamItem.setInjected(true);
+                    streamTableModel.addStream(streamItem);
+                });
             }
 
             // Handle receive on dst socket
-            WebSocketStream streamItem;
             if (socketId == config.getTargetSocketId()) {
-                if (message.isText()) {
-                    streamItem = new WebSocketStream(
-                            config.getStreamTableModel().getRowCount(),
-                            (InterceptedTextMessage) message.getInterceptedMessage(),
-                            LocalDateTime.now(),
-                            "");
-                } else {
-                    streamItem = new WebSocketStream(
-                            config.getStreamTableModel().getRowCount(),
-                            (InterceptedBinaryMessage) message.getInterceptedMessage(),
-                            LocalDateTime.now(),
-                            "");
-                }
-                config.getStreamTableModel().addStream(streamItem);
+                final WebSocketAutoRepeaterStreamTableModel streamTableModel = config.getStreamTableModel();
+                SwingUtilities.invokeLater(() -> {
+                    WebSocketStream streamItem;
+                    if (message.isText()) {
+                        streamItem = new WebSocketStream(
+                                streamTableModel.getRowCount(),
+                                (InterceptedTextMessage) message.getInterceptedMessage(),
+                                LocalDateTime.now(),
+                                "");
+                    } else {
+                        streamItem = new WebSocketStream(
+                                streamTableModel.getRowCount(),
+                                (InterceptedBinaryMessage) message.getInterceptedMessage(),
+                                LocalDateTime.now(),
+                                "");
+                    }
+                    streamTableModel.addStream(streamItem);
+                });
             }
         }
     }

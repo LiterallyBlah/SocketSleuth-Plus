@@ -82,4 +82,14 @@ public class StringPayloadModel implements IPayloadModel<String> {
     public DefaultListModel<String> getListModel() {
         return this.listModel;
     }
+    
+    /**
+     * Returns the total number of payloads in this model.
+     *
+     * @return the number of payloads
+     */
+    @Override
+    public int size() {
+        return listModel.size();
+    }
 }

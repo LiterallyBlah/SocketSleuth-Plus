@@ -27,13 +27,18 @@ public class WebSocketConnectionTableModel extends AbstractTableModel {
     private Class<?>[] columnTypes = { Integer.class, String.class, Integer.class, Boolean.class, Boolean.class, Integer.class, String.class };
 
     public void addConnection(WebsocketConnectionTableRow connection) {
+        int index = connections.size();
         connections.add(connection);
-        fireTableDataChanged();
+        fireTableRowsInserted(index, index);
     }
 
     public void removeConnection(int row) {
         connections.remove(row);
-        fireTableDataChanged();
+        fireTableRowsDeleted(row, row);
+    }
+
+    public void updateConnection(int row) {
+        fireTableRowsUpdated(row, row);
     }
 
     public WebsocketConnectionTableRow getConnection(int row) {

@@ -26,13 +26,14 @@ public class WebSocketAutoRepeaterStreamTableModel extends AbstractTableModel {
     private Class<?>[] columnTypes = { Integer.class, String.class, Boolean.class, String.class, Integer.class, LocalDateTime.class };
 
     public void addStream(WebSocketStream stream) {
+        int index = streams.size();
         streams.add(stream);
-        fireTableDataChanged();
+        fireTableRowsInserted(index, index);
     }
 
     public void removeStream(int row) {
         streams.remove(row);
-        fireTableDataChanged();
+        fireTableRowsDeleted(row, row);
     }
 
     public WebSocketStream getStream(int row) {

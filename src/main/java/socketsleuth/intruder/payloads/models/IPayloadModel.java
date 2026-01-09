@@ -32,4 +32,12 @@ public interface IPayloadModel<T> extends Iterable<T> {
      */
     @Override
     Iterator<T> iterator();
+    
+    /**
+     * Returns the total number of payloads in this model.
+     * Used for progress tracking.
+     *
+     * @return the number of payloads
+     */
+    int size();
 }

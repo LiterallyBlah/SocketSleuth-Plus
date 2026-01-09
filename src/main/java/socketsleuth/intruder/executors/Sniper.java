@@ -20,7 +20,7 @@ import burp.api.montoya.MontoyaApi;
 import burp.api.montoya.proxy.websocket.ProxyWebSocket;
 import burp.api.montoya.websocket.Direction;
 import burp.api.montoya.websocket.TextMessage;
-import socketsleuth.intruder.WSIntruderMessageView;
+import socketsleuth.intruder.JSONRPCMessageTableModel;
 import socketsleuth.intruder.payloads.models.IPayloadModel;
 import socketsleuth.intruder.payloads.payloads.Utils;
 import websocket.MessageProvider;
@@ -46,18 +46,27 @@ class WebSocketMessage {
 public class Sniper {
     private final MessageProvider socketProvider;
     private MontoyaApi api;
-    private WSIntruderMessageView messageView;
+    private JSONRPCMessageTableModel tableModel;
     private Thread workerThread;
     private volatile boolean cancelled = false;
     private int minDelay = 100;
     private int maxDelay = 200;
     private List<WebSocketMessage> sentMessages;
+    private Consumer<Integer> progressCallback;
+    private Runnable completionCallback;
 
-    public Sniper(MontoyaApi api, WSIntruderMessageView messageView, MessageProvider socketProvider) {
+    public Sniper(MontoyaApi api, MessageProvider socketProvider) {
         this.api = api;
-        this.messageView = messageView;
         this.socketProvider = socketProvider;
         this.sentMessages = new ArrayList<WebSocketMessage>();
+    }
+    
+    /**
+     * Set the table model to use for displaying messages.
+     * This should be called before starting the attack.
+     */
+    public void setTableModel(JSONRPCMessageTableModel tableModel) {
+        this.tableModel = tableModel;
     }
 
     public int getMinDelay() {
@@ -76,12 +85,26 @@ public class Sniper {
         this.maxDelay = maxDelay;
     }
 
+    public void setProgressCallback(Consumer<Integer> callback) {
+        this.progressCallback = callback;
+    }
+
+    public void setCompletionCallback(Runnable callback) {
+        this.completionCallback = callback;
+    }
+
     public boolean isRunning() {
         if (workerThread == null) {
             return false;
         }
-
         return workerThread.isAlive();
+    }
+
+    public void cancel() {
+        cancelled = true;
+        if (workerThread != null) {
+            workerThread.interrupt();
+        }
     }
 
     public void start(ProxyWebSocket proxyWebSocket,
@@ -103,6 +126,11 @@ public class Sniper {
             return;
         }
 
+        if (tableModel == null) {
+            api.logging().logToOutput("Error: No table model set for Sniper executor");
+            return;
+        }
+        
         api.logging().logToOutput(
                 "Starting sniper payload insertion with Min Delay: "
                         + minDelay
@@ -110,38 +138,80 @@ public class Sniper {
                         + maxDelay
         );
 
+        // Track the current payload for response association
+        final String[] currentPayload = {null};
+        
         Consumer<TextMessage> responseSubscriber = textMessage -> {
-            messageView.getTableModel().addMessage(textMessage.payload(), textMessage.direction());
+            SwingUtilities.invokeLater(() -> {
+                // Responses don't have a payload, but we can associate with the last sent payload
+                tableModel.addMessage(textMessage.payload(), textMessage.direction(), currentPayload[0]);
+            });
         };
         this.socketProvider.subscribeTextMessage(socketId, responseSubscriber);
 
-
+        cancelled = false;
         Random rand = new Random();
+        final int totalPayloads = payloadModel.size();
+        
         workerThread = new Thread(() -> {
             api.logging().logToOutput("Sniper execution started");
+            int current = 0;
             for (String payload : payloadModel) {
+                if (cancelled) {
+                    api.logging().logToOutput("Sniper attack cancelled by user");
+                    break;
+                }
+                
+                // Track current payload for response association
+                currentPayload[0] = payload;
+                
                 String newInput = replacePlaceholders(baseInput, payload);
                 proxyWebSocket.sendTextMessage(newInput, selectedDirection);
-                messageView.getTableModel().addMessage(newInput, selectedDirection);
+                
+                final int progress = current;
+                final String payloadForTable = payload;
+                SwingUtilities.invokeLater(() -> {
+                    tableModel.addMessage(newInput, selectedDirection, payloadForTable);
+                    if (progressCallback != null) {
+                        int percent = totalPayloads > 0 ? (progress * 100) / totalPayloads : 0;
+                        progressCallback.accept(percent);
+                    }
+                });
+                
                 sentMessages.add(new WebSocketMessage(newInput, selectedDirection));
+                current++;
+                
                 int delay = rand.nextInt(maxDelay - minDelay + 1) + minDelay;
                 try {
                     Thread.sleep(delay);
                 } catch (InterruptedException ex) {
-                    ex.printStackTrace();
+                    if (cancelled) {
+                        break;
+                    }
                 }
             }
 
-            // Wait a while to catch responses from the final request
-            try {
-                api.logging().logToOutput("finished - cleaning up");
-                Thread.sleep(5000);
-            } catch (InterruptedException ex) {
-                ex.printStackTrace();
-            } finally {
-                this.socketProvider.unsubscribeTextMessage(socketId, responseSubscriber);
-                api.logging().logToOutput("clean up complete");
+            // Wait a while to catch responses from the final request (unless cancelled)
+            if (!cancelled) {
+                try {
+                    api.logging().logToOutput("finished - cleaning up");
+                    Thread.sleep(5000);
+                } catch (InterruptedException ex) {
+                    // Ignore
+                }
             }
+            
+            this.socketProvider.unsubscribeTextMessage(socketId, responseSubscriber);
+            api.logging().logToOutput("clean up complete");
+            
+            SwingUtilities.invokeLater(() -> {
+                if (progressCallback != null) {
+                    progressCallback.accept(100);
+                }
+                if (completionCallback != null) {
+                    completionCallback.run();
+                }
+            });
         });
 
         workerThread.start();

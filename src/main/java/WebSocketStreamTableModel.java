@@ -28,13 +28,14 @@ public class WebSocketStreamTableModel extends AbstractTableModel {
     private Class<?>[] columnTypes = { Integer.class, String.class, String.class, Integer.class, LocalDateTime.class, String.class };
 
     public void addStream(WebSocketStream stream) {
+        int index = streams.size();
         streams.add(stream);
-        fireTableDataChanged();
+        fireTableRowsInserted(index, index);
     }
 
     public void removeStream(int row) {
         streams.remove(row);
-        fireTableDataChanged();
+        fireTableRowsDeleted(row, row);
     }
 
     public WebSocketStream getStream(int row) {
@@ -69,7 +70,8 @@ public class WebSocketStreamTableModel extends AbstractTableModel {
             case 1:
                 return stream.getMessage();
             case 2:
-                return stream.getDirection();
+                // Return string representation for proper sorting/filtering
+                return stream.getDirection() != null ? stream.getDirection().toString() : "";
             case 3:
                 return stream.getLength();
             case 4:

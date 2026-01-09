@@ -15,10 +15,48 @@
  */
 import java.io.ByteArrayOutputStream;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
 public class Utils {
+
+    // LRU cache for compiled regex patterns (max 100 entries)
+    private static final int MAX_PATTERN_CACHE_SIZE = 100;
+    private static final Map<String, Pattern> patternCache = new LinkedHashMap<String, Pattern>(
+            MAX_PATTERN_CACHE_SIZE + 1, 0.75f, true) {
+        @Override
+        protected boolean removeEldestEntry(Map.Entry<String, Pattern> eldest) {
+            return size() > MAX_PATTERN_CACHE_SIZE;
+        }
+    };
+
+    /**
+     * Gets a compiled Pattern from cache or compiles and caches it.
+     * Returns null if the pattern is not a valid regex.
+     */
+    public static Pattern getCompiledPattern(String pattern) {
+        if (pattern == null || pattern.isEmpty()) {
+            return null;
+        }
+        
+        synchronized (patternCache) {
+            Pattern compiled = patternCache.get(pattern);
+            if (compiled != null) {
+                return compiled;
+            }
+            
+            try {
+                compiled = Pattern.compile(pattern);
+                patternCache.put(pattern, compiled);
+                return compiled;
+            } catch (PatternSyntaxException e) {
+                return null;
+            }
+        }
+    }
 
     // Ugly but it works - detects \x01\x02\x03 hex strings
     public static boolean isHexString(String input) {
@@ -88,18 +126,23 @@ public class Utils {
         return output.toByteArray();
     }
 
+    /**
+     * Checks if the input is a valid regex pattern.
+     * Uses cached pattern compilation for performance.
+     */
     public static boolean isRegex(String input) {
-        try {
-            Pattern.compile(input);
-            return true;
-        } catch (PatternSyntaxException e) {
-            return false;
-        }
+        return getCompiledPattern(input) != null;
     }
 
+    /**
+     * Replaces occurrences in input string using either regex or literal replacement.
+     * Uses cached pattern compilation for regex replacements.
+     */
     public static String replace(String input, String find, String replaceWith) {
-        if (isRegex(find)) {
-            return input.replaceAll(find, replaceWith);
+        Pattern pattern = getCompiledPattern(find);
+        if (pattern != null) {
+            Matcher matcher = pattern.matcher(input);
+            return matcher.replaceAll(Matcher.quoteReplacement(replaceWith));
         } else {
             return input.replace(find, replaceWith);
         }

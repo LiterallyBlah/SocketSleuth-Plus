@@ -13,7 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import socketsleuth.ui.MessageFilterPanel;
+
 import javax.swing.*;
+import javax.swing.event.AncestorEvent;
+import javax.swing.event.AncestorListener;
 import java.awt.*;
 
 public class SleuthUI {
@@ -26,12 +30,75 @@ public class SleuthUI {
     private JSplitPane streamVIewSplitPane;
     private JScrollPane socketConnectionScroll;
     private JSplitPane socketConnectionSplit;
+    private MessageFilterPanel filterPanel;
+    private JPanel streamTableContainer;
+    private boolean dividerLocationSet = false;
 
     public SleuthUI() {
-        this.connectionTable.setAutoCreateRowSorter(false);
-        this.streamTable.setAutoCreateRowSorter(false);
-        this.socketConnectionSplit.setDividerLocation(900);
-        this.streamVIewSplitPane.setDividerLocation(900);
+        // Enable table sorting
+        this.connectionTable.setAutoCreateRowSorter(true);
+        this.streamTable.setAutoCreateRowSorter(true);
+        
+        // Create and add filter panel
+        this.filterPanel = new MessageFilterPanel();
+        this.filterPanel.setTargetTable(this.streamTable);
+        
+        // Get the parent BEFORE moving components around
+        Container parent = streamTableScrollView.getParent();
+        
+        // Wrap the stream table with the filter panel
+        this.streamTableContainer = new JPanel(new BorderLayout());
+        this.streamTableContainer.add(filterPanel, BorderLayout.NORTH);
+        
+        // Replace the stream table scroll view with the container
+        if (parent != null) {
+            parent.remove(streamTableScrollView);
+            this.streamTableContainer.add(streamTableScrollView, BorderLayout.CENTER);
+            if (parent instanceof JPanel) {
+                ((JPanel) parent).add(streamTableContainer, new com.intellij.uiDesigner.core.GridConstraints(
+                        2, 0, 1, 1, 
+                        com.intellij.uiDesigner.core.GridConstraints.ANCHOR_CENTER, 
+                        com.intellij.uiDesigner.core.GridConstraints.FILL_BOTH, 
+                        com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_CAN_SHRINK | 
+                                com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_WANT_GROW, 
+                        com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_CAN_SHRINK | 
+                                com.intellij.uiDesigner.core.GridConstraints.SIZEPOLICY_WANT_GROW, 
+                        null, null, null, 0, false));
+            }
+        }
+        
+        // Set proportional divider locations AFTER the component is visible and has size
+        panel1.addAncestorListener(new AncestorListener() {
+            @Override
+            public void ancestorAdded(AncestorEvent event) {
+                if (!dividerLocationSet) {
+                    // Use invokeLater to ensure layout is complete
+                    SwingUtilities.invokeLater(() -> {
+                        // Use pixel values based on current size, as ratio doesn't work before visible
+                        int connectionWidth = socketConnectionSplit.getWidth();
+                        int streamHeight = streamVIewSplitPane.getHeight();
+                        
+                        if (connectionWidth > 0) {
+                            socketConnectionSplit.setDividerLocation((int)(connectionWidth * 0.35));
+                        }
+                        if (streamHeight > 0) {
+                            streamVIewSplitPane.setDividerLocation((int)(streamHeight * 0.5));
+                        }
+                        dividerLocationSet = true;
+                    });
+                }
+            }
+            
+            @Override
+            public void ancestorRemoved(AncestorEvent event) {}
+            
+            @Override
+            public void ancestorMoved(AncestorEvent event) {}
+        });
+    }
+    
+    public MessageFilterPanel getFilterPanel() {
+        return filterPanel;
     }
 
     public void setStreamVIewSplitPane(Component uiComponent) {
